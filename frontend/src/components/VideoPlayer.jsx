@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion } from "framer-motion";
-import { Play, Pause, Volume2, VolumeX, Maximize, FastForward } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Play, Pause, Volume2, VolumeX, Maximize, FastForward, Settings, Check, Loader2,
+} from "lucide-react";
 import { getSponsorSegments } from "../api";
 
 function fmt(t) {
@@ -10,22 +12,53 @@ function fmt(t) {
   return `${m}:${s}`;
 }
 
+const QUALITIES = [
+  { id: "auto", label: "Auto (rápido)" },
+  { id: "720p", label: "720p HD" },
+  { id: "1080p", label: "1080p Full HD" },
+  { id: "4k", label: "4K Ultra HD" },
+];
+
 export default function VideoPlayer({ media }) {
   const videoRef = useRef(null);
+  const firstRender = useRef(true);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [segments, setSegments] = useState([]);
   const [skipToast, setSkipToast] = useState(null);
+  const [quality, setQuality] = useState("auto");
+  const [qMenu, setQMenu] = useState(false);
+  const [buffering, setBuffering] = useState(false);
 
-  // Trae los segmentos de SponsorBlock cuando cambia el video
+  // Auto = stream progresivo directo (rápido, 360p en YouTube).
+  // HD = el backend mezcla video+audio al vuelo a la calidad pedida.
+  const srcFor = (q) =>
+    q === "auto"
+      ? media.stream_url
+      : `/api/stream?url=${encodeURIComponent(media.webpage_url)}&quality=${q}`;
+
+  // Al cambiar de video: SponsorBlock + reset de calidad a Auto.
   useEffect(() => {
     if (!media?.id) return;
     getSponsorSegments(media.id).then(setSegments);
+    setQuality("auto");
   }, [media?.id]);
 
-  // Lógica de salto automático de segmentos patrocinados
+  // Al cambiar de calidad (no en el montaje): recarga y reproduce.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const v = videoRef.current;
+    if (v) {
+      v.load();
+      v.play().catch(() => {});
+    }
+  }, [quality]);
+
   const handleTimeUpdate = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -44,6 +77,8 @@ export default function VideoPlayer({ media }) {
     v.paused ? v.play() : v.pause();
   };
 
+  const currentLabel = QUALITIES.find((q) => q.id === quality)?.label || "Auto";
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.99 }}
@@ -52,7 +87,7 @@ export default function VideoPlayer({ media }) {
     >
       <video
         ref={videoRef}
-        src={media.stream_url}
+        src={srcFor(quality)}
         poster={media.thumbnail}
         className="h-full w-full"
         onClick={togglePlay}
@@ -60,7 +95,19 @@ export default function VideoPlayer({ media }) {
         onLoadedMetadata={(e) => setDuration(e.target.duration)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onWaiting={() => setBuffering(true)}
+        onPlaying={() => setBuffering(false)}
+        onCanPlay={() => setBuffering(false)}
       />
+
+      {/* Spinner de buffering (al cargar HD) */}
+      {buffering && (
+        <div className="absolute inset-0 grid place-items-center bg-black/30">
+          <div className="flex items-center gap-2 rounded-full bg-black/60 px-4 py-2 text-sm text-neon backdrop-blur">
+            <Loader2 className="h-4 w-4 animate-spin" /> Cargando {currentLabel}…
+          </div>
+        </div>
+      )}
 
       {/* Toast de "Saltado: sponsor" */}
       {skipToast && (
@@ -110,7 +157,44 @@ export default function VideoPlayer({ media }) {
           <span className="font-mono text-xs text-muted">
             {fmt(progress)} / {fmt(duration)}
           </span>
-          <button onClick={() => videoRef.current.requestFullscreen()} className="ml-auto hover:text-neon">
+
+          {/* Selector de calidad */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setQMenu((o) => !o)}
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs hover:text-neon"
+            >
+              <Settings className="h-4 w-4" />
+              <span className="font-medium">{quality === "auto" ? "Auto" : quality.toUpperCase()}</span>
+            </button>
+            <AnimatePresence>
+              {qMenu && (
+                <motion.ul
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  className="absolute bottom-9 right-0 w-44 overflow-hidden rounded-xl border border-white/10 bg-surface/95 p-1 shadow-xl backdrop-blur"
+                >
+                  {QUALITIES.map((q) => (
+                    <li key={q.id}>
+                      <button
+                        onClick={() => {
+                          setQuality(q.id);
+                          setQMenu(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/5"
+                      >
+                        <span className="flex-1">{q.label}</span>
+                        {q.id === quality && <Check className="h-4 w-4 text-neon" />}
+                      </button>
+                    </li>
+                  ))}
+                </motion.ul>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <button onClick={() => videoRef.current.requestFullscreen()} className="hover:text-neon">
             <Maximize className="h-5 w-5" />
           </button>
         </div>

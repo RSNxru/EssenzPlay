@@ -11,6 +11,16 @@ export default function SearchBar({ onSearch, loading }) {
     if (q && !loading) onSearch(q);
   };
 
+  // Pegar una URL = buscar al instante (sin pulsar "Buscar").
+  const handlePaste = (e) => {
+    const text = (e.clipboardData.getData("text") || "").trim();
+    if (/^https?:\/\//i.test(text)) {
+      e.preventDefault();
+      setValue(text);
+      if (!loading) onSearch(text);
+    }
+  };
+
   return (
     <motion.form
       initial={{ opacity: 0, y: -8 }}
@@ -23,6 +33,7 @@ export default function SearchBar({ onSearch, loading }) {
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onPaste={handlePaste}
           placeholder="Pega una URL o busca por palabras clave…"
           className="w-full bg-transparent text-sm text-gray-100 placeholder:text-muted focus:outline-none"
         />

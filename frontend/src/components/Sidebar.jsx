@@ -6,7 +6,7 @@ export default function Sidebar({ history, onPick, view, setView, downloadCount 
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-white/5 bg-surface/50 backdrop-blur">
       <div className="flex items-center gap-2 px-5 py-5">
         <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-neon to-magenta" />
-        <span className="font-mono text-lg font-bold tracking-tight">StreamDLP</span>
+        <span className="font-mono text-lg font-bold tracking-tight">EssenzPlay</span>
       </div>
 
       {/* Navegación */}

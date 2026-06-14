@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from functools import partial
 
@@ -190,6 +191,59 @@ def _pick_audio_url(info: dict) -> str | None:
         reverse=True,
     )
     return audios[0].get("url")
+
+
+# --- Streaming HD (merge en vivo con ffmpeg) ---------------------------------
+
+QUALITY_HEIGHT = {"360p": 360, "480p": 480, "720p": 720, "1080p": 1080, "4k": 2160}
+
+
+def get_stream_urls(url: str, quality: str) -> tuple[str | None, str | None]:
+    """Devuelve (video_url, audio_url) para la calidad pedida.
+
+    Elige video-only <= altura (prefiriendo avc/H.264 por compatibilidad) y la
+    mejor pista de audio (m4a/AAC). Si no hay separados, cae a un progresivo
+    (video_url con audio incluido, audio_url=None).
+    """
+    h = QUALITY_HEIGHT.get(quality, 720)
+    info = _extract_sync(url)
+    fmts = info.get("formats", [])
+
+    vids = [
+        f for f in fmts
+        if f.get("vcodec", "none") != "none" and f.get("acodec", "none") == "none"
+        and f.get("url") and (f.get("height") or 0) <= h
+    ]
+    # altura asc, luego preferir avc (H.264), luego bitrate -> nos quedamos el último
+    vids.sort(key=lambda f: (
+        f.get("height") or 0,
+        (f.get("vcodec") or "").startswith("avc"),
+        f.get("tbr") or 0,
+    ))
+    auds = [
+        f for f in fmts
+        if f.get("acodec", "none") != "none" and f.get("vcodec", "none") == "none"
+        and f.get("url")
+    ]
+    auds.sort(key=lambda f: (f.get("ext") in ("m4a", "mp4"), f.get("abr") or 0))
+
+    if vids and auds:
+        return vids[-1]["url"], auds[-1]["url"]
+    # Sin streams separados: progresivo (ya trae audio)
+    return _pick_stream_url(info), None
+
+
+def build_ffmpeg_stream_cmd(video_url: str, audio_url: str | None) -> list[str]:
+    """Comando ffmpeg que muxea a mp4 fragmentado en stdout (reproducible en streaming)."""
+    cmd = ["ffmpeg", "-loglevel", "error", "-i", video_url]
+    if audio_url:
+        cmd += ["-i", audio_url]
+    cmd += [
+        "-c", "copy",                       # sin recodificar: rápido
+        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+        "-f", "mp4", "pipe:1",
+    ]
+    return cmd
 
 
 # --- Extracción (sin descargar) ----------------------------------------------
