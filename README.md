@@ -1,4 +1,4 @@
-# 🎬 StreamDLP
+# 🎬 EssenzPlay
 
 Cliente alternativo, reproductor sin anuncios y gestor de descargas construido sobre `yt-dlp` + `ffmpeg`.
 
