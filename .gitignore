@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+cookies.txt
+backend/cookies.txt
+backend/cookies/cookies.txt
+streamdlp.db
+backend/downloads/
+node_modules/
+dist/
+.vite/

@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: streamdlp
+      POSTGRES_PASSWORD: streamdlp
+      POSTGRES_DB: streamdlp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamdlp"]
+      interval: 5s
+      retries: 5
+
+  # Proveedor de PO tokens para YouTube (evita HTTP 429 / "Unable to fetch PO Token")
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    restart: unless-stopped
+    ports:
+      - "4416:4416"
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://streamdlp:streamdlp@db:5432/streamdlp
+      DOWNLOAD_DIR: /downloads
+      CORS_ORIGINS: '["http://localhost:5173"]'
+      POT_PROVIDER_URL: http://pot-provider:4416
+      # Cookies de TU cuenta real para contenido +18 / con login (opcional).
+      # Suelta tu cookies.txt en backend/cookies/ y reinicia: se usa solo si existe.
+      COOKIES_FILE: /cookies/cookies.txt
+    volumes:
+      - ./backend/app:/app/app          # hot-reload del código en dev
+      - ./backend/cookies:/cookies:ro   # tus cookies (montaje seguro de carpeta)
+      - downloads:/downloads
+    ports:
+      - "8090:8000"          # 8000-8002 los usa el ecosistema Essenz; publicamos en 8090
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+      pot-provider:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      VITE_API_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules                # preserva node_modules del contenedor
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  downloads:
